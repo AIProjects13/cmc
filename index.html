@@ -1238,33 +1238,35 @@
             const token = u ? await u.getIdToken() : "";
             if (!token) console.warn("Advertencia: No se pudo generar el Token de seguridad.");
             
-            const tables = Object.keys(DB);
-            for (const t of tables) {
-                try {
-                    const res = await fetch(`${GOOGLE_SCRIPT_URL}?sheetName=${t}&_cb=${Date.now()}&token=${token}`);
-                    const json = await res.json();
-                    if (json.status === 'success' && json.data) {
-                        DB[t] = parseSheetData(json.data);
-                        if(t === 'Citas') DB[t].forEach(c => { 
-                            if(c.Fecha) c.Fecha = String(c.Fecha).split('T')[0]; 
-                            if(c.Hora_Inicio) {
-                                let hi = String(c.Hora_Inicio);
-                                if(hi.startsWith("'")) hi = hi.substring(1);
-                                if(hi.includes('1899-12-30T')) hi = hi.split('T')[1].substring(0,5);
-                                c.Hora_Inicio = hi;
-                            }
-                            if(c.Hora_Fin) {
-                                let hf = String(c.Hora_Fin);
-                                if(hf.startsWith("'")) hf = hf.substring(1);
-                                if(hf.includes('1899-12-30T')) hf = hf.split('T')[1].substring(0,5);
-                                c.Hora_Fin = hf;
-                            }
-                        });
-                        if(t === 'Pacientes') DB[t].forEach(p => { if(p.Fecha_Nacimiento) p.Fecha_Nacimiento = String(p.Fecha_Nacimiento).split('T')[0]; });
-                        if(t === 'Finanzas') DB[t].forEach(f => { if(f.Fecha_Pago) f.Fecha_Pago = String(f.Fecha_Pago).split('T')[0]; });
+            try {
+                const res = await fetch(`${GOOGLE_SCRIPT_URL}?sheetName=ALL&_cb=${Date.now()}&token=${token}`);
+                const json = await res.json();
+                if (json.status === 'success' && json.data) {
+                    const allData = json.data;
+                    for (const t of Object.keys(DB)) {
+                        if (allData[t]) {
+                            DB[t] = parseSheetData(allData[t]);
+                            if(t === 'Citas') DB[t].forEach(c => { 
+                                if(c.Fecha) c.Fecha = String(c.Fecha).split('T')[0]; 
+                                if(c.Hora_Inicio) {
+                                    let hi = String(c.Hora_Inicio);
+                                    if(hi.startsWith("'")) hi = hi.substring(1);
+                                    if(hi.includes('1899-12-30T')) hi = hi.split('T')[1].substring(0,5);
+                                    c.Hora_Inicio = hi;
+                                }
+                                if(c.Hora_Fin) {
+                                    let hf = String(c.Hora_Fin);
+                                    if(hf.startsWith("'")) hf = hf.substring(1);
+                                    if(hf.includes('1899-12-30T')) hf = hf.split('T')[1].substring(0,5);
+                                    c.Hora_Fin = hf;
+                                }
+                            });
+                            if(t === 'Pacientes') DB[t].forEach(p => { if(p.Fecha_Nacimiento) p.Fecha_Nacimiento = String(p.Fecha_Nacimiento).split('T')[0]; });
+                            if(t === 'Finanzas') DB[t].forEach(f => { if(f.Fecha_Pago) f.Fecha_Pago = String(f.Fecha_Pago).split('T')[0]; });
+                        }
                     }
-                } catch (err) { console.error(`Error GET ${t}:`, err); }
-            }
+                }
+            } catch (err) { console.error(`Error GET ALL:`, err); }
             
             const cfgRow = DB.Marketing_Templates.find(x => x.Template_ID === 'SYS_CONFIG');
             if (cfgRow && cfgRow.Cuerpo) {
