@@ -462,6 +462,9 @@
                             <button onclick="exportCSV('finanzas')" class="bg-white border border-primary-200 text-primary-700 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-primary-50 transition-all shadow-sm flex items-center gap-2">
                                 <i class="fa-solid fa-file-csv"></i> Exportar
                             </button>
+                            <button onclick="openDirectSaleModal()" class="bg-emerald-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-emerald-600 transition-all shadow-sm flex items-center gap-2">
+                                <i class="fa-solid fa-cart-arrow-down"></i> Venta Directa
+                            </button>
                             <button onclick="openModal('modal-expense')" class="bg-red-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-red-600 transition-all shadow-sm flex items-center gap-2">
                                 <i class="fa-solid fa-minus-circle"></i> Registrar Gasto
                             </button>
@@ -770,6 +773,57 @@
         </div>
         <div class="p-6 border-t border-primary-100 bg-white">
             <button type="button" onclick="confirmAssignDoc()" class="w-full bg-blue-500 hover:bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-md shadow-blue-200 transition-all">Llamar Paciente a Consulta</button>
+        </div>
+    </div>
+
+    <!-- Modal Venta Directa -->
+    <div id="modal-direct-sale" class="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-50 side-sheet flex flex-col border-l border-primary-100">
+        <div class="p-6 border-b border-primary-100 flex justify-between items-center bg-slate-50">
+            <h3 class="font-bold text-lg text-slate-800"><i class="fa-solid fa-cart-arrow-down text-emerald-500 mr-2"></i>Venta Directa</h3>
+            <button onclick="closeModal('modal-direct-sale')" class="text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 transition-colors"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="p-6 flex-1 overflow-y-auto">
+            <form id="form-direct-sale" onsubmit="saveDirectSale(event)">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Nombre del Cliente</label>
+                        <input type="text" id="vd-cliente" class="soft-input w-full" placeholder="Público General" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Concepto / Producto / Servicio</label>
+                        <input type="text" id="vd-concepto" class="soft-input w-full" placeholder="Ej. Examen, Crema dermatológica..." required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Monto ($)</label>
+                        <input type="number" id="vd-monto" class="soft-input w-full" step="0.01" min="0" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Método de Pago</label>
+                        <select id="vd-metodo" class="soft-input w-full" required>
+                            <option value="Efectivo">Efectivo</option>
+                            <option value="Tarjeta">Tarjeta</option>
+                            <option value="Transferencia">Transferencia</option>
+                            <option value="POS">POS/Link</option>
+                            <option value="Otro">Otro</option>
+                        </select>
+                    </div>
+                    <div class="pt-2 border-t border-slate-100">
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Datos de Facturación (Opcional)</label>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">NIT</label>
+                        <input type="text" id="vd-nit" class="soft-input w-full" placeholder="C/F">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">Nombre a Facturar</label>
+                        <input type="text" id="vd-nombre-factura" class="soft-input w-full" placeholder="Mismo que cliente">
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="p-6 border-t border-primary-100 bg-slate-50 flex gap-3">
+            <button onclick="closeModal('modal-direct-sale')" type="button" class="flex-1 py-3 bg-white border border-primary-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition-colors">Cancelar</button>
+            <button type="submit" form="form-direct-sale" class="flex-1 py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 transition-colors shadow-sm">Guardar Venta</button>
         </div>
     </div>
 
@@ -1413,10 +1467,6 @@
             const m = document.getElementById(id);
             if(m.classList.contains('side-sheet')) m.classList.remove('open');
             
-            if(!document.querySelector('.side-sheet.open') && document.getElementById('modal-image-viewer').classList.contains('hidden-view')) {
-                document.getElementById('modal-overlay').classList.remove('open');
-            }
-            
             setTimeout(() => {
                 if(!m.classList.contains('side-sheet') || id === 'modal-image-viewer') m.classList.add('hidden-view');
                 if(!document.querySelector('.side-sheet.open') && document.getElementById('modal-image-viewer').classList.contains('hidden-view')) {
@@ -1424,6 +1474,59 @@
                 }
             }, 300);
         };
+        
+        window.openDirectSaleModal = function() {
+            document.getElementById('form-direct-sale').reset();
+            window.openModal('modal-direct-sale');
+        };
+
+        window.saveDirectSale = async function(e) {
+            e.preventDefault();
+            
+            const btn = e.target.querySelector('button[type="submit"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Guardando...';
+            btn.disabled = true;
+
+            const cliente = document.getElementById('vd-cliente').value;
+            const concepto = document.getElementById('vd-concepto').value;
+            const monto = document.getElementById('vd-monto').value;
+            const metodo = document.getElementById('vd-metodo').value;
+            const nit = document.getElementById('vd-nit').value || 'C/F';
+            const nombreFac = document.getElementById('vd-nombre-factura').value || cliente;
+            
+            const notas = `Cliente: ${cliente}\nConcepto: ${concepto}\nNIT: ${nit}\nNombre Factura: ${nombreFac}`;
+            const idCita = `VD-${Date.now()}`;
+            const idPago = `PAY-${Date.now()}`;
+
+            const rowData = {
+                ID_Cita: idCita,
+                ID_Pago: idPago,
+                Fecha_Pago: new Date().toISOString(),
+                Monto_Pagado: monto,
+                Metodo_Pago: metodo,
+                Notas: notas,
+                Registrado_Por: auth.currentUser?.email || 'Sistema'
+            };
+
+            const success = await syncBackend('Finanzas', rowData, 'create');
+            
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+
+            if (success) {
+                if(!DB.Finanzas) DB.Finanzas = [];
+                DB.Finanzas.push(rowData);
+                window.closeModal('modal-direct-sale');
+                showToast("Venta Directa registrada correctamente");
+                if (typeof renderFinances === 'function') renderFinances();
+                if (typeof renderDashboardStats === 'function') renderDashboardStats();
+                if (typeof generateReceipt === 'function') generateReceipt(idCita);
+            } else {
+                showToast("Error al guardar venta directa", "error");
+            }
+        };
+
         window.closeAllModals = () => document.querySelectorAll('.side-sheet.open, #modal-image-viewer:not(.hidden-view)').forEach(m => closeModal(m.id));
 
         window.setDashPeriod = function(p) {
@@ -2467,19 +2570,40 @@ Tratamiento: ${document.getElementById('chk-n-tratamiento').value}`;
         };
 
         window.generateReceipt = function(aptId) {
-            const apt = DB.Citas.find(x => x.ID_Cita === aptId);
-            const pat = DB.Pacientes.find(p => p.ID_Paciente === apt.ID_Paciente);
             const fin = DB.Finanzas.find(f => f.ID_Cita === aptId);
-            const docName = apt.Event_ID && apt.Event_ID.includes('||') ? apt.Event_ID.split('||')[1] : "Dr. Asignado";
-
-            document.getElementById('rec-clinic-name').innerText = SYS_CONFIG.Nombre;
-            document.getElementById('rec-pat').innerText = `${pat.Nombres} ${pat.Apellidos}`;
-            document.getElementById('rec-doc').innerText = docName;
-            document.getElementById('rec-date').innerText = apt.Fecha;
             
-            const nitVal = fin ? extractNoteSection(fin.Notas, 'NIT:', 'Nombre Factura:') : '';
-            const nomVal = fin ? extractNoteSection(fin.Notas, 'Nombre Factura:', 'Motivo de la Consulta:') : '';
+            document.getElementById('rec-clinic-name').innerText = SYS_CONFIG.Nombre;
 
+            let isVentaDirecta = aptId.startsWith('VD-');
+            let nitVal = '';
+            let nomVal = '';
+
+            if (isVentaDirecta) {
+                const vdCliente = fin ? extractNoteSection(fin.Notas, 'Cliente:', 'Concepto:') : 'Cliente Eventual';
+                const vdConcepto = fin ? extractNoteSection(fin.Notas, 'Concepto:', 'NIT:') : 'Servicios / Productos';
+                nitVal = fin ? extractNoteSection(fin.Notas, 'NIT:', 'Nombre Factura:') : '';
+                nomVal = fin ? extractNoteSection(fin.Notas, 'Nombre Factura:') : '';
+                
+                document.getElementById('rec-pat').innerText = vdCliente;
+                document.getElementById('rec-doc').innerText = 'Venta Directa';
+                document.getElementById('rec-date').innerText = fin && fin.Fecha_Pago ? fin.Fecha_Pago.split('T')[0] : new Date().toISOString().split('T')[0];
+                document.getElementById('rec-motivo').innerText = vdConcepto;
+            } else {
+                const apt = DB.Citas.find(x => x.ID_Cita === aptId);
+                if (!apt) return;
+                const pat = DB.Pacientes.find(p => p.ID_Paciente === apt.ID_Paciente);
+                const docName = apt.Event_ID && apt.Event_ID.includes('||') ? apt.Event_ID.split('||')[1] : "Dr. Asignado";
+
+                nitVal = fin ? extractNoteSection(fin.Notas, 'NIT:', 'Nombre Factura:') : '';
+                nomVal = fin ? extractNoteSection(fin.Notas, 'Nombre Factura:', 'Motivo de la Consulta:') : '';
+                const motivoVal = fin ? extractNoteSection(fin.Notas, 'Motivo de la Consulta:', 'Historia de la Enfermedad:') : '';
+
+                document.getElementById('rec-pat').innerText = pat ? `${pat.Nombres} ${pat.Apellidos}` : 'Paciente';
+                document.getElementById('rec-doc').innerText = docName;
+                document.getElementById('rec-date').innerText = apt.Fecha;
+                document.getElementById('rec-motivo').innerText = motivoVal || apt.Motivo || 'Consulta General';
+            }
+            
             if (nitVal) {
                 document.getElementById('rec-nit').innerText = nitVal;
                 document.getElementById('rec-nit-container').classList.remove('hidden');
@@ -2493,9 +2617,12 @@ Tratamiento: ${document.getElementById('chk-n-tratamiento').value}`;
             } else {
                 document.getElementById('rec-nombre-factura-container').classList.add('hidden');
             }
-            
+
             let recNotesHtml = '';
-            if (fin && fin.Notas) {
+            if (isVentaDirecta) {
+                const vdConcepto = fin ? extractNoteSection(fin.Notas, 'Concepto:', 'NIT:') : 'Venta Directa';
+                recNotesHtml = `<p><strong class="text-primary-800">Concepto de Venta:</strong> ${vdConcepto}</p><p class="text-xs text-slate-400 mt-2">Venta realizada al público general o cliente eventual sin cita registrada.</p>`;
+            } else if (fin && fin.Notas) {
                 const motivo = extractNoteSection(fin.Notas, 'Motivo de la Consulta:', 'Historia de la Enfermedad:');
                 const tratamiento = extractNoteSection(fin.Notas, 'Tratamiento:');
                 
@@ -2517,35 +2644,50 @@ Tratamiento: ${document.getElementById('chk-n-tratamiento').value}`;
             // Añadir Ingresos (Omitir si es recepcionista/rol restringido)
             if (!document.body.classList.contains('role-restricted')) {
                 (DB.Finanzas || []).forEach(f => {
-                const apt = DB.Citas.find(c => c.ID_Cita === f.ID_Cita);
-                const pat = apt ? DB.Pacientes.find(p => p.ID_Paciente === apt.ID_Paciente) : null;
-                const desc = pat ? `${pat.Nombres} ${pat.Apellidos || ''}<br><span class="text-[10px] text-slate-400 font-mono">ID: ${pat.ID_Paciente}</span>` : 'Desc.';
-                
-                combined.push({
-                    id: f.ID_Pago,
-                    fechaStr: f.Fecha_Pago ? String(f.Fecha_Pago).split('T')[0] : 'S/F',
-                    rawDate: f.Fecha_Pago || '',
-                    desc: desc,
-                    monto: parseFloat(f.Monto_Pagado || 0),
-                    metodo: f.Metodo_Pago || 'Efectivo',
-                    tipo: 'Ingreso',
-                    original: f
+                    try {
+                        let desc = 'Desc.';
+                        if (f.ID_Cita && String(f.ID_Cita).startsWith('VD-')) {
+                            const vdCliente = extractNoteSection(f.Notas, 'Cliente:', 'Concepto:');
+                            const vdConcepto = extractNoteSection(f.Notas, 'Concepto:', 'NIT:');
+                            desc = `${vdCliente}<br><span class="text-[10px] text-emerald-500 font-bold"><i class="fa-solid fa-cart-arrow-down"></i> Venta Directa: ${vdConcepto}</span>`;
+                        } else {
+                            const apt = DB.Citas.find(c => String(c.ID_Cita) === String(f.ID_Cita));
+                            const pat = apt ? DB.Pacientes.find(p => String(p.ID_Paciente) === String(apt.ID_Paciente)) : null;
+                            desc = pat ? `${pat.Nombres} ${pat.Apellidos || ''}<br><span class="text-[10px] text-slate-400 font-mono">ID: ${pat.ID_Paciente}</span>` : 'Desc.';
+                        }
+                        
+                        combined.push({
+                            id: f.ID_Pago,
+                            fechaStr: f.Fecha_Pago ? String(f.Fecha_Pago).split('T')[0] : 'S/F',
+                            rawDate: f.Fecha_Pago || '',
+                            desc: desc,
+                            monto: parseFloat(f.Monto_Pagado || 0),
+                            metodo: f.Metodo_Pago || 'Efectivo',
+                            tipo: 'Ingreso',
+                            original: f
+                        });
+                    } catch (e) {
+                        console.error("Error processing Finanzas record", f, e);
+                    }
                 });
-            });
             }
 
             // Añadir Gastos
             (DB.Gastos || []).forEach(g => {
-                combined.push({
-                    id: g.ID_Gasto,
-                    fechaStr: g.Fecha ? String(g.Fecha).split('T')[0] : 'S/F',
-                    rawDate: g.Timestamp || g.Fecha || '',
-                    desc: g.Concepto || 'Gasto',
-                    monto: parseFloat(g.Monto || 0),
-                    metodo: g.Metodo_Pago || 'Efectivo',
-                    tipo: 'Gasto',
-                    original: g
-                });
+                try {
+                    combined.push({
+                        id: g.ID_Gasto,
+                        fechaStr: g.Fecha ? String(g.Fecha).split('T')[0] : 'S/F',
+                        rawDate: g.Timestamp || g.Fecha || '',
+                        desc: g.Concepto || 'Gasto',
+                        monto: parseFloat(g.Monto || 0),
+                        metodo: g.Metodo_Pago || 'Efectivo',
+                        tipo: 'Gasto',
+                        original: g
+                    });
+                } catch (e) {
+                    console.error("Error processing Gastos record", g, e);
+                }
             });
 
             // Aplicar filtro si viene del buscador global
@@ -2572,10 +2714,14 @@ Tratamiento: ${document.getElementById('chk-n-tratamiento').value}`;
                 const isGasto = item.tipo === 'Gasto';
                 const sign = isGasto ? '-' : '+';
                 const colorClass = isGasto ? 'text-red-600 bg-red-50' : 'text-emerald-600 bg-emerald-50';
-                const acciones = isGasto ? 
+                let acciones = isGasto ? 
                     `<button onclick="editGasto('${item.id}')" class="text-primary-500 hover:text-primary-700 mx-1"><i class="fa-solid fa-pen"></i></button>
                      <button onclick="deleteGasto('${item.id}')" class="text-red-500 hover:text-red-700 mx-1"><i class="fa-solid fa-trash-can"></i></button>` 
                     : '';
+                    
+                if (!isGasto && item.original && item.original.ID_Cita) {
+                    acciones = `<button onclick="generateReceipt('${item.original.ID_Cita}')" class="text-emerald-500 hover:text-emerald-700 mx-1" title="Ver Recibo"><i class="fa-solid fa-receipt"></i></button>`;
+                }
                 
                 tbody.innerHTML += `
                     <tr class="hover:bg-primary-50 transition-colors">
@@ -3322,23 +3468,23 @@ Tratamiento: ${document.getElementById('chk-n-tratamiento').value}`;
 
         onAuthStateChanged(auth, async (user) => {
             if (user) {
-                try {
-                    const userDoc = await getDoc(doc(db, 'CMC', user.email));
-                    let role = 'user';
-                    
-                    if (user.email === 'fernan151085@gmail.com') { // Correo principal de administrador hardcodeado
-                        role = 'admin';
-                    } else if (userDoc.exists()) {
-                        role = userDoc.data().role || userDoc.data().rol || 'user';
+                let role = 'user';
+                if (user.email === 'fernan151085@gmail.com') { // Correo principal de administrador hardcodeado
+                    role = 'admin';
+                } else {
+                    try {
+                        const userDoc = await getDoc(doc(db, 'CMC', user.email));
+                        if (userDoc.exists()) {
+                            role = userDoc.data().role || userDoc.data().rol || 'user';
+                        }
+                    } catch (error) {
+                        console.error("Error fetching role:", error);
                     }
-                    
-                    if (role === 'admin') {
-                        document.body.classList.remove('role-restricted');
-                    } else {
-                        document.body.classList.add('role-restricted');
-                    }
-                } catch (error) {
-                    console.error("Error fetching role:", error);
+                }
+                
+                if (role === 'admin') {
+                    document.body.classList.remove('role-restricted');
+                } else {
                     document.body.classList.add('role-restricted');
                 }
             }
