@@ -1078,6 +1078,7 @@
                 <p class="flex justify-between border-b border-slate-100 pb-1 hidden" id="rec-nombre-factura-container"><strong>A nombre de:</strong> <span id="rec-nombre-factura" class="font-bold text-slate-800">--</span></p>
                 <p class="flex justify-between border-b border-slate-100 pb-1"><strong>Doctor:</strong> <span id="rec-doc" class="font-bold text-slate-800">--</span></p>
                 <p class="flex justify-between border-b border-slate-100 pb-1"><strong>Fecha:</strong> <span id="rec-date" class="font-bold text-slate-800">--</span></p>
+                <p class="flex justify-between border-b border-slate-100 pb-1"><strong>Motivo:</strong> <span id="rec-motivo" class="font-bold text-slate-800">--</span></p>
             </div>
             <div class="border border-primary-100 bg-primary-50/20 p-4 rounded-xl mb-6">
                 <p class="font-bold text-primary-800 text-xs uppercase tracking-wider mb-2">Detalles Clínicos:</p>
@@ -1354,6 +1355,74 @@
         async function syncBackend(table, rowData, actionType = 'create', recordId = null, extraData = null) {
             window.showLoader();
             try {
+                if (table !== 'Auditoria_Logs' && ['create', 'update', 'delete'].includes(actionType)) {
+                    let accionEs = actionType === 'create' ? 'CREACIÓN' : (actionType === 'update' ? 'ACTUALIZACIÓN' : 'ELIMINACIÓN');
+                    let logDetalles = '';
+                    
+                    if (actionType === 'update' && recordId && DB[table]) {
+                        const oldRecord = DB[table].find(r => 
+                            String(r.ID_Paciente) === String(recordId) || 
+                            String(r.ID_Cita) === String(recordId) || 
+                            String(r.ID_Gasto) === String(recordId) || 
+                            String(r.ID_Pago) === String(recordId) || 
+                            String(r.id) === String(recordId) ||
+                            String(r.ID) === String(recordId)
+                        );
+                        if (oldRecord && rowData) {
+                            let cambios = [];
+                            for (let k in rowData) {
+                                if (k.startsWith('ID_') || k === 'Registrado_Por') continue;
+                                let newVal = rowData[k] || '';
+                                let oldVal = oldRecord[k] || '';
+                                if (String(newVal) !== String(oldVal)) {
+                                    let sOld = String(oldVal).replace(/\n/g, ' ');
+                                    let sNew = String(newVal).replace(/\n/g, ' ');
+                                    if (sOld.length > 50) sOld = sOld.substring(0, 50) + '...';
+                                    if (sNew.length > 50) sNew = sNew.substring(0, 50) + '...';
+                                    cambios.push(`${k}: '${sOld}' -> '${sNew}'`);
+                                }
+                            }
+                            logDetalles = cambios.length > 0 ? `Cambios: ` + cambios.join(' | ') : `Actualización sin cambios detectables (ID: ${recordId})`;
+                        } else {
+                            logDetalles = `Actualización (ID: ${recordId})`;
+                        }
+                    } else if (actionType === 'create') {
+                        logDetalles = `Nuevo registro. `;
+                        let resumen = [];
+                        if (rowData) {
+                            for (let k in rowData) {
+                                if (['Nombre', 'Concepto', 'Monto', 'Total', 'Monto_Pagado', 'Motivo', 'Estado', 'Metodo_Pago', 'Notas', 'Paciente'].includes(k) && rowData[k]) {
+                                    let v = String(rowData[k]).replace(/\n/g, ' ');
+                                    if(v.length > 50) v = v.substring(0, 50) + '...';
+                                    resumen.push(`${k}: ${v}`);
+                                }
+                            }
+                        }
+                        if (resumen.length > 0) logDetalles += resumen.join(' | ');
+                    } else if (actionType === 'delete') {
+                        logDetalles = `Registro eliminado (ID: ${recordId})`;
+                    }
+
+                    const logData = {
+                        Timestamp: new Date().toISOString(),
+                        Modulo: table,
+                        Accion: accionEs,
+                        Detalles: logDetalles,
+                        Usuario: auth.currentUser?.email || 'Sistema'
+                    };
+                    
+                    const logPayload = { action: 'create', sheetName: 'Auditoria_Logs', rowData: logData, user: currentUser };
+                    if (auth.currentUser) logPayload.token = await auth.currentUser.getIdToken();
+                    
+                    fetch(GOOGLE_SCRIPT_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify(logPayload)
+                    }).catch(e => console.error('Error log:', e));
+                    
+                    if (DB.Auditoria_Logs) DB.Auditoria_Logs.push(logData);
+                }
+
                 const payload = { action: actionType, sheetName: table, rowData: rowData, user: currentUser };
                 if (recordId) payload.id = recordId;
                 if (extraData) Object.assign(payload, extraData); 
@@ -1475,18 +1544,38 @@
             }, 300);
         };
         
+        window.currentEditVDId = null;
+
         window.openDirectSaleModal = function() {
+            window.currentEditVDId = null;
             document.getElementById('form-direct-sale').reset();
             window.openModal('modal-direct-sale');
+        };
+
+        window.editVentaDirecta = function(idCita) {
+            const fin = DB.Finanzas.find(f => String(f.ID_Cita) === String(idCita));
+            if (!fin) return;
+            window.currentEditVDId = idCita;
+            
+            document.getElementById('vd-cliente').value = extractNoteSection(fin.Notas, 'Cliente:', 'Concepto:');
+            document.getElementById('vd-concepto').value = extractNoteSection(fin.Notas, 'Concepto:', 'NIT:');
+            document.getElementById('vd-monto').value = fin.Monto_Pagado || '';
+            document.getElementById('vd-metodo').value = fin.Metodo_Pago || 'Efectivo';
+            document.getElementById('vd-nit').value = extractNoteSection(fin.Notas, 'NIT:', 'Nombre Factura:');
+            document.getElementById('vd-nombre-factura').value = extractNoteSection(fin.Notas, 'Nombre Factura:');
+            
+            openModal('modal-direct-sale');
         };
 
         window.saveDirectSale = async function(e) {
             e.preventDefault();
             
-            const btn = e.target.querySelector('button[type="submit"]');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Guardando...';
-            btn.disabled = true;
+            const btn = document.querySelector('button[form="form-direct-sale"]');
+            const originalText = btn ? btn.innerHTML : 'Guardar Venta';
+            if (btn) {
+                btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Guardando...';
+                btn.disabled = true;
+            }
 
             const cliente = document.getElementById('vd-cliente').value;
             const concepto = document.getElementById('vd-concepto').value;
@@ -1496,32 +1585,56 @@
             const nombreFac = document.getElementById('vd-nombre-factura').value || cliente;
             
             const notas = `Cliente: ${cliente}\nConcepto: ${concepto}\nNIT: ${nit}\nNombre Factura: ${nombreFac}`;
-            const idCita = `VD-${Date.now()}`;
-            const idPago = `PAY-${Date.now()}`;
+            
+            const isEditing = !!window.currentEditVDId;
+            const idCita = isEditing ? window.currentEditVDId : `VD-${Date.now()}`;
+            
+            let idPago = `PAY-${Date.now()}`;
+            let originalFecha = new Date().toISOString();
+            if (isEditing) {
+                const fin = DB.Finanzas.find(f => String(f.ID_Cita) === String(idCita));
+                if (fin) {
+                    idPago = fin.ID_Pago;
+                    originalFecha = fin.Fecha_Pago || originalFecha;
+                }
+            }
 
             const rowData = {
                 ID_Cita: idCita,
                 ID_Pago: idPago,
-                Fecha_Pago: new Date().toISOString(),
+                Fecha_Pago: originalFecha,
                 Monto_Pagado: monto,
                 Metodo_Pago: metodo,
                 Notas: notas,
                 Registrado_Por: auth.currentUser?.email || 'Sistema'
             };
 
-            const success = await syncBackend('Finanzas', rowData, 'create');
+            let success = false;
+            if (isEditing) {
+                success = await syncBackend('Finanzas', rowData, 'update', idPago);
+            } else {
+                success = await syncBackend('Finanzas', rowData, 'create');
+            }
             
-            btn.innerHTML = originalText;
-            btn.disabled = false;
+            if (btn) {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
 
             if (success) {
                 if(!DB.Finanzas) DB.Finanzas = [];
-                DB.Finanzas.push(rowData);
+                if (isEditing) {
+                    const idx = DB.Finanzas.findIndex(f => String(f.ID_Cita) === String(idCita));
+                    if (idx > -1) DB.Finanzas[idx] = rowData;
+                } else {
+                    DB.Finanzas.push(rowData);
+                }
+                
                 window.closeModal('modal-direct-sale');
-                showToast("Venta Directa registrada correctamente");
+                showToast(isEditing ? "Venta Directa actualizada" : "Venta Directa registrada correctamente");
                 if (typeof renderFinances === 'function') renderFinances();
                 if (typeof renderDashboardStats === 'function') renderDashboardStats();
-                if (typeof generateReceipt === 'function') generateReceipt(idCita);
+                if (!isEditing && typeof generateReceipt === 'function') generateReceipt(idCita);
             } else {
                 showToast("Error al guardar venta directa", "error");
             }
@@ -2272,7 +2385,7 @@
                 showToast("Cita Actualizada con éxito");
 
                 // CORREO DE REAGENDAMIENTO / ACTUALIZACIÓN
-                if(pat.Email && pat.Email.includes('@')) {
+                if(pat && pat.Email && String(pat.Email).includes('@')) {
                     const emailBody = `
                         <div style="font-family: 'Inter', sans-serif, Arial; color: #334155; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
                             <div style="background-color: #0d9488; padding: 25px; text-align: center;">
@@ -2296,8 +2409,8 @@
                             </div>
                         </div>
                     `;
-                    syncBackend('', null, 'sendBatchEmails', null, {
-                        targets: [{ email: pat.Email, name: pat.Nombres }],
+                    await syncBackend('', null, 'sendBatchEmails', null, {
+                        targets: [{ email: String(pat.Email).trim(), name: pat.Nombres }],
                         subject: `Actualización de Cita - ${SYS_CONFIG.Nombre}`,
                         templateText: emailBody
                     });
@@ -2308,7 +2421,7 @@
                 showToast("Cita Agendada y Validada");
 
                 // CORREO DE CREACIÓN DE CITA
-                if(pat.Email && pat.Email.includes('@')) {
+                if(pat && pat.Email && String(pat.Email).includes('@')) {
                     const emailBody = `
                         <div style="font-family: 'Inter', sans-serif, Arial; color: #334155; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
                             <div style="background-color: #0d9488; padding: 25px; text-align: center;">
@@ -2331,8 +2444,8 @@
                             </div>
                         </div>
                     `;
-                    syncBackend('', null, 'sendBatchEmails', null, {
-                        targets: [{ email: pat.Email, name: pat.Nombres }],
+                    await syncBackend('', null, 'sendBatchEmails', null, {
+                        targets: [{ email: String(pat.Email).trim(), name: pat.Nombres }],
                         subject: `Confirmación de Cita - ${SYS_CONFIG.Nombre}`,
                         templateText: emailBody
                     });
@@ -2570,11 +2683,11 @@ Tratamiento: ${document.getElementById('chk-n-tratamiento').value}`;
         };
 
         window.generateReceipt = function(aptId) {
-            const fin = DB.Finanzas.find(f => f.ID_Cita === aptId);
+            const fin = DB.Finanzas.find(f => String(f.ID_Cita) === String(aptId));
             
             document.getElementById('rec-clinic-name').innerText = SYS_CONFIG.Nombre;
 
-            let isVentaDirecta = aptId.startsWith('VD-');
+            let isVentaDirecta = String(aptId).startsWith('VD-');
             let nitVal = '';
             let nomVal = '';
 
@@ -2589,9 +2702,9 @@ Tratamiento: ${document.getElementById('chk-n-tratamiento').value}`;
                 document.getElementById('rec-date').innerText = fin && fin.Fecha_Pago ? fin.Fecha_Pago.split('T')[0] : new Date().toISOString().split('T')[0];
                 document.getElementById('rec-motivo').innerText = vdConcepto;
             } else {
-                const apt = DB.Citas.find(x => x.ID_Cita === aptId);
+                const apt = DB.Citas.find(x => String(x.ID_Cita) === String(aptId));
                 if (!apt) return;
-                const pat = DB.Pacientes.find(p => p.ID_Paciente === apt.ID_Paciente);
+                const pat = DB.Pacientes.find(p => String(p.ID_Paciente) === String(apt.ID_Paciente));
                 const docName = apt.Event_ID && apt.Event_ID.includes('||') ? apt.Event_ID.split('||')[1] : "Dr. Asignado";
 
                 nitVal = fin ? extractNoteSection(fin.Notas, 'NIT:', 'Nombre Factura:') : '';
@@ -2721,6 +2834,9 @@ Tratamiento: ${document.getElementById('chk-n-tratamiento').value}`;
                     
                 if (!isGasto && item.original && item.original.ID_Cita) {
                     acciones = `<button onclick="generateReceipt('${item.original.ID_Cita}')" class="text-emerald-500 hover:text-emerald-700 mx-1" title="Ver Recibo"><i class="fa-solid fa-receipt"></i></button>`;
+                    if (String(item.original.ID_Cita).startsWith('VD-')) {
+                        acciones = `<button onclick="editVentaDirecta('${item.original.ID_Cita}')" class="text-primary-500 hover:text-primary-700 mx-1" title="Editar Venta"><i class="fa-solid fa-pen"></i></button>` + acciones;
+                    }
                 }
                 
                 tbody.innerHTML += `
